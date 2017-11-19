@@ -1,0 +1,136 @@
+<?php
+/**
+ * @file
+ * No render 'Add to cart' form module.
+ */
+
+// @todo Define as a module setting.
+define('NO_RENDER_ADD_TO_CART_AJAX', TRUE);
+
+/**
+ * Implements hook_menu().
+ */
+function no_render_add_to_cart_menu() {
+  $items['no-render-add/nojs'] = array (
+    'page callback' => 'no_render_add_to_cart_callback',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['no-render-add/ajax'] = array (
+    'delivery callback' => 'ajax_deliver',
+  ) + $items['no-render-add/nojs'];
+  return $items;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function no_render_add_to_cart_views_api(){
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'no_render_add_to_cart') . '/views',
+  );
+}
+
+/**
+ * Implements hook_theme().
+ */
+function no_render_add_to_cart_theme(){
+  return array(
+    'no_render_add_to_cart_form' => array(
+      'template' => 'templates/no-render-add-to-cart-form',
+      'arguments' => array(
+        'product_id' => NULL,
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_extra_fields().
+ */
+function no_render_add_to_cart_field_extra_fields() {
+  $extra = array();
+  foreach (commerce_product_types() as $type => $product_type){
+    $extra['commerce_product'][$type]['display'] = array(
+      'add_to_cart' => array(
+        'label' => t("Non FORM-API 'Add to cart form'"),
+        'weight' => 0,
+      ),
+    );
+  }
+  return $extra;
+}
+
+/**
+ * Implements hook_entity_view()
+ */
+function no_render_add_to_cart_entity_view($entity, $type, $view_mode, $langcode){
+  if ($type == 'commerce_product') {
+    $vars = array(
+      'product_id' => $entity->product_id,
+    );
+    $entity->content['add_to_cart'] = array(
+      '#markup' => theme('no_render_add_to_cart_form', $vars),
+      '#weight' => 0,
+    );
+
+    if (NO_RENDER_ADD_TO_CART_AJAX) {
+      drupal_add_library('system', 'drupal.ajax');
+      drupal_add_library('system', 'jquery.form');
+      drupal_add_js(drupal_get_path('module', 'no_render_add_to_cart').'/js/no_render_add_to_cart_ajax.js', 'file');
+    }
+  }
+}
+
+/**
+ * Hook menu callback.
+ *
+ * Adds product into a cart.
+ *
+ * @see no_render_add_to_cart_menu()
+ */
+function no_render_add_to_cart_callback($ajax) {
+  $quantity = 1;
+  if(!empty($_POST['quantity']) && is_numeric($_POST['quantity'])){
+    $quantity = $_POST['quantity'];
+  }
+
+  // Adding product into a cart.
+  try {
+    $product = commerce_product_load($_POST['product_id']);
+    $line_item = commerce_product_line_item_new($product, $quantity);
+
+    $line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
+    $line_item_wrapper->commerce_display_path = token_replace('[commerce-product:node-link-path]', array('commerce-product' => $product));
+
+    drupal_alter('commerce_product_calculate_sell_price_line_item', $line_item);
+    rules_invoke_event('commerce_product_calculate_sell_price', $line_item);
+
+    global $user;
+    $uid = $user->uid;
+    commerce_cart_product_add($uid, $line_item, TRUE);
+  }
+  catch (Exception $e) {
+    watchdog_exception('no_render_add_to_cart', $e);
+    throw $e;
+  }
+
+  if ($ajax == 'ajax') {
+    $commands = array();
+
+    // @todo expose cart block and its selector into a setting.
+    $block = module_invoke('commerce_cart', 'block_view', 'cart');
+    $commands[] = ajax_command_html('#block-commerce-cart-cart .content', render($block['content']));
+
+    // Taking care about the messages.
+    $commands[] = ajax_command_remove('div.messages');
+    $commands[] = ajax_command_after('#main-content', theme('status_messages'));
+
+    return ['#type' => 'ajax', '#commands' => $commands];
+  }
+  else {
+    drupal_goto($_SERVER['HTTP_REFERER']);
+  }
+}

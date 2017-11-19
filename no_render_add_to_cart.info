@@ -1,0 +1,16 @@
+name = No render 'Add to cart' form
+description = Product custom non FORM-API 'Add to cart' from.
+core = "7.x"
+package = Custom modules by Klimp
+
+dependencies[] = commerce
+dependencies[] = commerce_checkout
+dependencies[] = commerce_line_item
+dependencies[] = commerce_order
+dependencies[] = commerce_product
+dependencies[] = commerce_product_pricing
+dependencies[] = commerce_product_reference
+dependencies[] = views
+
+; Views Handlers
+files[] = views/no_render_add_to_cart_field_handler.inc
